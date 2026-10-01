@@ -1,0 +1,72 @@
+// Skeleton Jenkinsfile for Lab 02 — complete the TODOs.
+// Put this file at the root of your app repo.
+// Note: empty options/parameters blocks may fail Jenkins validation — fill in the TODOs before running.
+
+pipeline {
+    // TODO: run on an agent labeled 'linux' (not on the controller)
+    agent any
+
+    options {
+        // TODO: 20-minute timeout
+        // TODO: keep at most the 10 most recent builds (buildDiscarder + logRotator)
+        // TODO: add timestamps to the console log
+        // TODO: do not allow concurrent builds
+    }
+
+    parameters {
+        // TODO: choice TARGET_ENV with values 'dev', 'staging'
+        // TODO: booleanParam SKIP_TESTS, default false
+    }
+
+    environment {
+        APP_NAME = 'employee-api'   // TODO: change to your app name
+        // TODO: GIT_SHORT_SHA taken from git
+        // TODO: VERSION = "${BUILD_NUMBER}-<git short sha>"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                // A "Pipeline script from SCM" job already checks out the code; explain in NOTES.md why this step may still be needed
+                checkout scm
+            }
+        }
+
+        stage('Info') {
+            steps {
+                // TODO: print APP_NAME, VERSION, current branch, TARGET_ENV, and who triggered the build
+                echo 'TODO'
+            }
+        }
+
+        stage('Test') {
+            // TODO: skip this stage when SKIP_TESTS = true
+            steps {
+                // TODO: run the app's unit tests (pytest / dotnet test / mvn test ...)
+                sh 'echo "TODO: run tests"'
+            }
+        }
+
+        stage('Notify') {
+            // TODO: run only on the main branch (used in a Multibranch Pipeline)
+            steps {
+                echo "TODO: announce build ${env.VERSION} for environment ${params.TARGET_ENV}"
+            }
+        }
+    }
+
+    post {
+        success {
+            // TODO
+            echo 'TODO'
+        }
+        failure {
+            // TODO
+            echo 'TODO'
+        }
+        always {
+            // TODO: clean up the workspace
+            echo 'TODO'
+        }
+    }
+}

@@ -1,0 +1,35 @@
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0 auto;
+  max-width: 880px;
+  padding: 16px;
+  color: #1f2328;
+}
+
+nav {
+  display: flex;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #d0d7de;
+}
+
+nav a {
+  color: #0969da;
+  text-decoration: none;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.error {
+  color: #cf222e;
+}

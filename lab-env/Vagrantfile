@@ -1,0 +1,152 @@
+# -*- mode: ruby -*-
+# Standard lab environment for the ncc-devops-basic exercises
+#   vm1 192.168.56.11  - server (PostgreSQL, Nginx, app...)
+#   vm2 192.168.56.12  - allowed client
+#   vm3 192.168.56.13  - blocked client / spare machine
+#
+# Supported providers:
+#   vagrant up                            # VirtualBox (default)
+#   vagrant up --provider=vmware_desktop  # VMware Workstation / Fusion
+#   vagrant up --provider=hyperv          # Hyper-V (run hyperv/setup-network.ps1 first)
+#
+# Usage: vagrant up | vagrant ssh vm1 | vagrant halt | vagrant destroy -f
+
+VMS = {
+  "vm1" => { ip: "192.168.56.11", memory: 2048 },
+  "vm2" => { ip: "192.168.56.12", memory: 1024 },
+  "vm3" => { ip: "192.168.56.13", memory: 1024 },
+}
+
+REPO_URL = "https://github.com/nccasia/ncc-devops-basic.git"
+
+# Hyper-V: internal switch with NAT created by hyperv/setup-network.ps1
+HYPERV_SWITCH  = "ncc-lab"
+HYPERV_GATEWAY = "192.168.56.1"
+
+PROVISION = <<~SHELL
+  set -euo pipefail
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+  apt-get install -y curl wget vim git net-tools acl dnsutils traceroute \
+    tcpdump jq unzip htop tree ufw
+  timedatectl set-timezone Asia/Ho_Chi_Minh || true
+
+  # VMs can resolve each other by name
+  for entry in "192.168.56.11 vm1" "192.168.56.12 vm2" "192.168.56.13 vm3"; do
+    grep -q "$entry" /etc/hosts || echo "$entry" >> /etc/hosts
+  done
+SHELL
+
+# Hyper-V only: Vagrant cannot set a static IP on Hyper-V, so write a netplan
+# config for the lab network. It is NOT applied now (the VM is still on the
+# "Default Switch" with DHCP); it takes effect after the trigger below moves the
+# VM to the ncc-lab switch and restarts it.
+HYPERV_NETWORK = <<~SHELL
+  set -euo pipefail
+  IP="$1"; GATEWAY="$2"
+  mkdir -p /etc/netplan/backup
+  find /etc/netplan -maxdepth 1 -name '*.yaml' ! -name '99-ncc-lab.yaml' \
+    -exec mv {} /etc/netplan/backup/ \\;
+  cat > /etc/netplan/99-ncc-lab.yaml <<EOF
+  network:
+    version: 2
+    ethernets:
+      lab0:
+        match:
+          driver: hv_netvsc
+        set-name: eth0
+        dhcp4: false
+        addresses: [${IP}/24]
+        routes:
+          - to: default
+            via: ${GATEWAY}
+        nameservers:
+          addresses: [1.1.1.1, 8.8.8.8]
+  EOF
+  chmod 600 /etc/netplan/99-ncc-lab.yaml
+  # Stop cloud-init from regenerating the network config
+  if [ -d /etc/cloud/cloud.cfg.d ]; then
+    echo "network: {config: disabled}" > /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+  fi
+SHELL
+
+# Hyper-V only: no synced folder (SMB needs admin + Windows credentials),
+# clone the repo inside the VM instead. Update later with: git -C /repo pull
+HYPERV_CLONE_REPO = <<~SHELL
+  set -euo pipefail
+  if ! command -v git >/dev/null; then
+    apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y git
+  fi
+  if [ ! -d /repo/.git ]; then
+    git clone --depth 1 "$1" /repo
+    chown -R vagrant:vagrant /repo
+  fi
+SHELL
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "bento/ubuntu-22.04"
+  config.vm.box_check_update = false
+
+  # Mount the whole repo at /repo so lab scripts/starters can be used inside the VMs
+  config.vm.synced_folder "..", "/repo"
+
+  VMS.each do |name, opts|
+    config.vm.define name do |node|
+      node.vm.hostname = name
+      node.vm.network "private_network", ip: opts[:ip]
+
+      node.vm.provider "virtualbox" do |vb|
+        vb.name   = "ncc-devops-#{name}"
+        vb.cpus   = 1
+        vb.memory = opts[:memory]
+      end
+
+      node.vm.provider "vmware_desktop" do |v|
+        v.gui = false
+        v.linked_clone = true
+        v.vmx["displayName"] = "ncc-devops-#{name}"
+        v.vmx["numvcpus"]    = "1"
+        v.vmx["memsize"]     = opts[:memory].to_s
+      end
+
+      node.vm.provider "hyperv" do |hv, override|
+        # bento does not publish Hyper-V boxes
+        override.vm.box = "generic/ubuntu2204"
+        # First boot uses "Default Switch" (DHCP + internet) for provisioning
+        override.vm.network "public_network", bridge: "Default Switch"
+        override.vm.synced_folder ".", "/vagrant", disabled: true
+        override.vm.synced_folder "..", "/repo", disabled: true
+
+        hv.vmname       = "ncc-devops-#{name}"
+        hv.cpus         = 1
+        hv.memory       = opts[:memory]
+        hv.maxmemory    = opts[:memory]
+        hv.linked_clone = true
+        hv.vm_integration_services = { guest_service_interface: true }
+
+        override.vm.provision "hyperv-clone-repo", type: "shell",
+          inline: HYPERV_CLONE_REPO, args: [REPO_URL]
+        override.vm.provision "hyperv-network", type: "shell",
+          inline: HYPERV_NETWORK, args: [opts[:ip], HYPERV_GATEWAY]
+      end
+
+      node.vm.provision "base", type: "shell", inline: PROVISION
+
+      # Hyper-V only: move the VM to the ncc-lab switch so it uses its static IP.
+      # Idempotent: does nothing if the VM is already on ncc-lab.
+      node.trigger.after :up do |t|
+        t.name = "hyperv-lab-network"
+        t.ruby do |_env, machine|
+          next unless machine.provider_name == :hyperv
+          script = File.expand_path("hyperv/connect-lab-switch.ps1", File.dirname(__FILE__))
+          ok = system("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                      "-File", script,
+                      "-VMName", "ncc-devops-#{name}",
+                      "-SwitchName", HYPERV_SWITCH,
+                      "-ExpectedIP", opts[:ip])
+          raise "Failed to move #{name} to the #{HYPERV_SWITCH} switch" unless ok
+        end
+      end
+    end
+  end
+end

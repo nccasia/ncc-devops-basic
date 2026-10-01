@@ -1,0 +1,9 @@
+username,fullname,group,password
+dev01,Nguyen Van A,developers,ChangeMe@123
+dev02,Tran Thi B,developers,ChangeMe@123
+qa01,Le Van C,testers,ChangeMe@123
+qa02,Pham Thi D,testers,
+ops01,Hoang Van E,ops,ChangeMe@123
+john,John Existing,developers,ChangeMe@123
+bad user,Ten Sai Dinh Dang,developers,ChangeMe@123
+dev03,,developers,ChangeMe@123

@@ -1,0 +1,31 @@
+# Secrets
+.env
+*.pem
+*.key
+!**/starter/**/*.example
+id_rsa*
+id_ed25519*
+
+# Build / deps
+node_modules/
+dist/
+build/
+target/
+bin/
+obj/
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Lab artifacts
+.vagrant/
+*.tar
+*.tar.gz
+*.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

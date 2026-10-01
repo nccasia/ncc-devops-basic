@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  app:
+    image: node:18-alpine
+    environment:
+      - DATABASE_URL=postgres://user:pass@db:5432/mydb
+      - API_KEY=${API_KEY}
+      - DEBUG_MODE=true
+      - SECRET_KEY="my-secret-key"
+      - REDIS_URL=redis://cache:6379
+    command: node -e "console.log(process.env)"
